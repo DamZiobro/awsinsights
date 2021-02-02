@@ -1,11 +1,12 @@
-# awsinsights
+awsinsights
+================
 
 Get and filter logs from multiple log groups of AWS CloudWatch and filter CloudWatch logs using predefined regular expressions. 
 
 This script uses [AWS CloudWatch Insights](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/AnalyzingLogData.html) service.
 
 Basic Usage
-================
+-----------
 1. Set up AWS Credentials.
 
 2. **Define apps** (sets of CloudWatch log groups assigned to app name) in `$HOME/.awsinsights.json`
@@ -24,7 +25,7 @@ awsinsights --timedelta 7d --appname simplebook --filter "Monday|Tuesday"
 
 
 Advanced Usage
-================
+-----------
 
 1. **Get logs from `simplebook` from 1 Jan 2021 10:00am to 2 Jan 2021 9:00am
    which contain 'Exception' or 'ERROR' on PROD environment**
@@ -40,7 +41,7 @@ awsinsights --timedelta 2h --log_groups "group-one-dev" "/aws/lambda/group-two-d
 
 
 Example of config file
-================
+-----------
 
 **Config file should be placed in `$HOME/.awsinsights.json`**
 
@@ -61,14 +62,15 @@ Each app consits of 2 CloudWatch log groups.
 ```
 
 Output file
-================
+-----------
 
 Logs will be written to output file. Output file will be:
 * `/tmp/{appname}.log` **if app name is defined** using `--appname` option OR
 * `/tmp/awsinsights.log` **if app name is NOT defined**
 
 Help
-=====
+-----------
+
 ```
 awsinsights [-h] [--timedelta TIMEDELTA] [--start START] [--end END]
                    [--filter FILTER]
