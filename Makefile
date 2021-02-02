@@ -10,3 +10,6 @@ check: #check python package using twine tool
 
 publish: build list check #publish python package to PyPI using twine tool
 	twine upload -r pypi dist/*
+
+clean:
+	rm -rf awsinsights.egg-info build dist
