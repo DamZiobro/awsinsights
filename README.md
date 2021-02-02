@@ -9,7 +9,7 @@ Basic Usage
 1. Set up AWS Credentials.
 
 2. **Define apps** (sets of CloudWatch log groups assigned to app name) in `$HOME/.awsinsights.json`
-   file. See [example file](#Example of config file) below.
+   file. See [example file](#example-of-config-file) below.
 
 3. **Get all logs from the `simplebook` app (2 log groups pre-defined) since last 30 minutes**:
 ```
