@@ -1,6 +1,6 @@
 # awsinsights
 
-Get sorted logs from multiple log gropus of CloudWatch and filter CloudWatch logs using predefined regular expressions. 
+Get and filter logs from multiple log groups of AWS CloudWatch and filter CloudWatch logs using predefined regular expressions. 
 
 This script uses [AWS CloudWatch Insights](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/AnalyzingLogData.html) service.
 
@@ -9,7 +9,7 @@ Basic Usage
 1. Set up AWS Credentials.
 
 2. **Define apps** (sets of CloudWatch log groups assigned to app name) in `$HOME/.awsinsights.json`
-   file. See [example file](#Example of $HOME/.awsinsights.json file) below.
+   file. See [example file](#Example of config file) below.
 
 3. **Get all logs from the `simplebook` app (2 log groups pre-defined) since last 30 minutes**:
 ```
