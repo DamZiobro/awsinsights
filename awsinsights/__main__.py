@@ -81,6 +81,8 @@ def main():
                         'Format: YYYY-MM-DD HH:MM:SS')
 
     parser.add_argument('--filter', help='Regular expression for filtering logs', default="")
+    parser.add_argument('--tail', help='TAIL MODE. If set to "true", It will listen for '
+                        'live logs forever', dest='tail', action="store_true")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--appname', help='name of the app which logs should ' \
@@ -128,6 +130,9 @@ def main():
         logging.error("ERROR => Neither start/end pair nor timedelta is defined")
         parser.print_help()
 
+    if args.tail:
+        logging.info(bcolors.OKGREEN + "\n\n   LISTENING IN TAIL MODE...\n" + bcolors.ENDC)
+
     #start grabbing logs
     awsinsights.get_logs(
         start_time=start,
@@ -135,7 +140,8 @@ def main():
         query=args.query,
         appname=args.appname,
         log_groups=args.log_groups,
-        wait_sec=int(args.wait)
+        wait_sec=int(args.wait),
+        is_tail=args.tail,
     )
 
 if __name__ == "__main__":

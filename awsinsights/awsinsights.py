@@ -28,7 +28,7 @@ class bcolors:
 
 def _is_recent_event_reached(recent_log_event, log_event):
 
-    if recent_log_event == None:
+    if recent_log_event is None:
         return True
 
     log_fields = {field['field'] : field['value'] for field in log_event}
@@ -47,7 +47,14 @@ def _utc_to_local(utc_datetime):
     return utc_datetime + offset
 
 
-def get_logs(start_time, end_time, query, appname=None, log_groups=None, wait_sec=10):
+def get_logs(start_time,
+             end_time,
+             query,
+             appname=None,
+             log_groups=None,
+             wait_sec=10,
+             is_tail=False
+            ):
 
     insights = boto3.client('logs')
 
@@ -59,29 +66,38 @@ def get_logs(start_time, end_time, query, appname=None, log_groups=None, wait_se
         logging.error(bcolors.FAIL + "0 log groups configured" + bcolors.ENDC)
         return
 
-    log_limit=10000
+    log_limit = 10000
     results = {'results' : []}
     recent_timestamp = None
     recent_log_event = None
 
 
     with open(filename, "w+") as output_file:
-        while len(results['results']) in (0, log_limit):
+        while len(results['results']) in (0, log_limit) or is_tail:
             if recent_timestamp:
-                start_time = datetime.datetime.strptime(str(recent_timestamp), "%Y-%m-%d %H:%M:%S.%f")
+                start_time = datetime.datetime.strptime(str(recent_timestamp),
+                                                        "%Y-%m-%d %H:%M:%S.%f")
                 start_time = _utc_to_local(start_time)
 
+            if is_tail:
+                end_time = datetime.datetime.now()
+
+            logging.debug(f"start_time: {start_time}")
+            logging.debug(f"end_time: {end_time}")
+
             async_resp = insights.start_query(
-                    logGroupNames = log_groups,
-                    startTime = int(start_time.timestamp()),
-                    endTime = int(end_time.timestamp()),
-                    queryString = query,
-                    limit = log_limit,
-                )
+                logGroupNames=log_groups,
+                startTime=int(start_time.timestamp()),
+                endTime=int(end_time.timestamp()),
+                queryString=query,
+                limit=log_limit,
+            )
 
             status = 'Running'
             while status not in ('Complete', 'Failed', 'Cancelled', 'Timeout'):
-                logging.info(bcolors.HEADER + f"waiting {wait_sec} seconds for query results - status: {status}" + bcolors.ENDC)
+                if not is_tail:
+                    logging.info(bcolors.HEADER + f"waiting {wait_sec} seconds for "
+                                 f"query results - status: {status}" + bcolors.ENDC)
                 time.sleep(wait_sec)
                 results = insights.get_query_results(queryId=async_resp['queryId'])
                 status = results['status']
@@ -107,6 +123,7 @@ def get_logs(start_time, end_time, query, appname=None, log_groups=None, wait_se
             if len(results['results']) > 0:
                 recent_log_event = results['results'][-1]
             else:
-                logging.warn(bcolors.WARNING + "   => 0 logs found which match defined filter..." + bcolors.ENDC)
-                break
-
+                if not is_tail:
+                    logging.warn(bcolors.WARNING + "   => 0 logs found which "
+                                 "match defined filter..." + bcolors.ENDC)
+                    break
