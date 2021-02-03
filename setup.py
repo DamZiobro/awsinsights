@@ -21,7 +21,7 @@ with open(os.path.join(HERE, "README.md")) as fid:
 # This call to setup() does all the work
 setup(
     name="awsinsights",
-    version="1.0.2",
+    version="1.0.3",
     description="Get, sort and analyse AWS CloudWatch logs from multiple log groups using AWS CloudWatch Insights service",
     long_description=README,
     long_description_content_type="text/markdown",
