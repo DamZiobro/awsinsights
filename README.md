@@ -39,6 +39,23 @@ awsinsights --env prod --start 2021-01-01 10:00:00 --end 2021-01-02 09:00:00 --a
 awsinsights --timedelta 2h --log_groups "group-one-dev" "/aws/lambda/group-two-dev"
 ```
 
+Tail mode
+-----------
+
+awsinsights allows to listen CloudWatch in live mode which is called `tail
+mode`. 
+
+It can be activated using `--tail` option. 
+
+Example - listening for ERRORs and Exceptions in tail mode:
+```
+awsinsights --timedelta 30m --appname simplebook --filter "ERROR|Exception" --tail
+```
+
+NOTE: Please notice that there might be **few mins delay** between the time when log really happened 
+and the time when it will appear in output of awsinsights' `tail mode`.
+
+
 
 Example of config file
 -----------
@@ -96,4 +113,6 @@ optional arguments:
   --query QUERY         Custom full AWS CloudWatch Insights query. " "Default:
                         fields @timestamp, @message | filter @message like //
                         | sort @timestamp
+  --tail                TAIL MODE. If set to "true", It will listen for live
+                        logs forever
 ```

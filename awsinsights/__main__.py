@@ -81,8 +81,6 @@ def main():
                         'Format: YYYY-MM-DD HH:MM:SS')
 
     parser.add_argument('--filter', help='Regular expression for filtering logs', default="")
-    parser.add_argument('--tail', help='TAIL MODE. If set to "true", It will listen for '
-                        'live logs forever', dest='tail', action="store_true")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--appname', help='name of the app which logs should ' \
@@ -101,6 +99,8 @@ def main():
             "like // | sort @timestamp"
     parser.add_argument('--query', help=f'Custom full AWS CloudWatch Insights query. " \
                         "Default: {insights_query}', default=insights_query)
+    parser.add_argument('--tail', help='TAIL MODE. If set to "true", It will listen for '
+                        'live logs forever', dest='tail', action="store_true")
     args = parser.parse_args()
 
     if args.query == insights_query:
