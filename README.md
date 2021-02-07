@@ -5,6 +5,13 @@ Get and filter logs from multiple log groups of AWS CloudWatch and filter CloudW
 
 This script uses [AWS CloudWatch Insights](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/AnalyzingLogData.html) service.
 
+Install
+-----------
+`awsinsights` is released to public PyPI - [awsinsights](https://pypi.org/project/awsinsights/). It can be installed using this command:
+```
+pip install awsinsights
+```
+
 Basic Usage
 -----------
 1. Set up AWS Credentials.
