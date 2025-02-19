@@ -37,7 +37,7 @@ Advanced Usage
 1. **Get logs from `simplebook` from 1 Jan 2021 10:00am to 2 Jan 2021 9:00am
    which contain 'Exception' or 'ERROR' on PROD environment**
 ```
-awsinsights --env prod --start 2021-01-01 10:00:00 --end 2021-01-02 09:00:00 --appname simplebook --filter "Exception|ERROR"
+awsinsights --env prod --start "2021-01-01 10:00:00" --end "2021-01-02 09:00:00" --appname simplebook --filter "Exception|ERROR"
 ```
 
 2. **Get all logs from CloudWatch log groups `group-one-dev` and `/aws/lambda/group-two-dev` since last 2 hours:**
