@@ -67,10 +67,10 @@ This is useful when log group names vary by environment or region:
 }
 ```
 
-For example, `/aws/lambda/my-function-*` will match:
-- `/aws/lambda/my-function-dev-eu-central-1`
-- `/aws/lambda/my-function-dev-us-east-1`
-- `/aws/lambda/my-function-dev-ap-southeast-1`
+For example, `/aws/lambda/my-api-*` will match:
+- `/aws/lambda/my-api-dev-eu-central-1`
+- `/aws/lambda/my-api-dev-us-east-1`
+- `/aws/lambda/my-api-dev-ap-southeast-1`
 
 Log groups without glob characters are passed through unchanged (no extra API calls).
 
@@ -87,8 +87,8 @@ awsinsights --appname myapp --show_log_group --timedelta 2h --filter "ERROR"
 ```
 Output:
 ```
-2026-04-01 02:57:19 [/aws-glue/jobs/DataLake] java.lang.OutOfMemoryError: GC overhead limit exceeded
-2026-04-01 23:00:10 [/aws/lambda/refresh_metrics_views] [ERROR] UndefinedTable: relation "mv_live_calendar_metrics" does not exist
+2026-04-01 02:57:19 [/aws-glue/jobs/etl-pipeline] java.lang.OutOfMemoryError: GC overhead limit exceeded
+2026-04-01 23:00:10 [/aws/lambda/process-orders] [ERROR] Table "orders_summary" does not exist
 ```
 
 ### `--show_log_stream`
@@ -107,8 +107,8 @@ awsinsights --appname myapp --show_resource --timedelta 2h --filter "ERROR"
 ```
 Output:
 ```
-2026-04-01 02:57:19 [/aws-glue/jobs/DataLake] [jr_abc123] (jr_abc123) java.lang.OutOfMemoryError...
-2026-04-01 23:00:10 [/aws/lambda/refresh_metrics_views] (refresh_metrics_views) [ERROR] UndefinedTable...
+2026-04-01 02:57:19 [/aws-glue/jobs/etl-pipeline] [jr_abc123] (jr_abc123) java.lang.OutOfMemoryError...
+2026-04-01 23:00:10 [/aws/lambda/process-orders] (process-orders) [ERROR] Table "orders_summary" does not exist
 ```
 
 Supported resource extraction patterns:
@@ -153,7 +153,7 @@ Example of config file
 
 **Config file should be placed in `$HOME/.awsinsights.json`**
 
-This example file contains 3 apps: `simplebook`, `secondapp`, and `datalake`.
+This example file contains 3 apps: `simplebook`, `secondapp`, and `my-pipeline`.
 Each app consists of CloudWatch log groups. Glob patterns (`*`, `?`) are supported.
 
 ```json
@@ -166,12 +166,12 @@ Each app consists of CloudWatch log groups. Glob patterns (`*`, `?`) are support
         "first-log-group",
         "/aws/lambda/second-log-group"
     ],
-    "datalake": [
-        "/aws-glue/jobs/DataLake",
-        "/aws/lambda/Lambda_Run_*",
-        "/aws/lambda/oreo_*",
-        "/aws/lambda/copy_data_to_rds",
-        "/aws/lambda/refresh_metrics_views"
+    "my-pipeline": [
+        "/aws-glue/jobs/etl-pipeline",
+        "/aws/lambda/ingest-*",
+        "/aws/lambda/process-*",
+        "/aws/lambda/export-to-db",
+        "/aws/kinesisfirehose/event-stream-$ENV"
     ]
 }
 ```
