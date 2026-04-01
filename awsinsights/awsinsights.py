@@ -96,6 +96,57 @@ def _utc_to_local(utc_datetime):
     return utc_datetime + offset
 
 
+def extract_resource_name(log_group, log_stream=None):
+    """Extract AWS resource name from log group path and optionally log stream.
+
+    Supports common AWS log group naming patterns:
+      /aws/lambda/{function}         → function name
+      /aws/kinesisfirehose/{stream}  → delivery stream name
+      /aws/rds/cluster/{cluster}/..  → cluster name
+      /aws/apigateway/{api}          → API name
+      /aws/ecs/{service}             → service name
+      /aws/codebuild/{project}       → project name
+      /aws/elasticbeanstalk/{env}/.. → environment name
+      /ecs/{service}                 → service name
+      /aws-glue/jobs/{group}         → job name from log stream (shared log group)
+      Custom log groups              → last path segment
+
+    For Glue jobs (shared log group), the job run ID is in the log stream.
+    """
+    if not log_group:
+        return None
+
+    parts = log_group.strip("/").split("/")
+
+    # AWS Glue: shared log group — job name is in the log stream
+    # Log stream format: "jr_<hash>" or "{job-name}/{run-id}"
+    if log_group.startswith("/aws-glue/") and log_stream:
+        # Some Glue log streams contain the job name as prefix
+        if "/" in log_stream:
+            return log_stream.split("/")[0]
+        return log_stream
+
+    # Standard AWS service patterns: /aws/{service}/{resource}
+    if len(parts) >= 3 and parts[0] == "aws":
+        service = parts[1]
+        # /aws/rds/cluster/{cluster-name}/error|audit|...
+        if service == "rds" and len(parts) >= 4:
+            return parts[3]
+        # /aws/lambda/{function}, /aws/kinesisfirehose/{stream}, etc.
+        return parts[2]
+
+    # /ecs/{service-name}
+    if len(parts) >= 2 and parts[0] == "ecs":
+        return parts[1]
+
+    # /aws-glue/jobs/{group} without log stream
+    if len(parts) >= 3 and parts[0] == "aws-glue":
+        return parts[2]
+
+    # Fallback: last path segment
+    return parts[-1] if parts else log_group
+
+
 def get_logs(
     start_time,
     end_time,
@@ -104,6 +155,7 @@ def get_logs(
     log_groups=None,
     wait_sec=10,
     is_tail=False,
+    show_resource=False,
 ):
     region = (
         os.environ.get("AWS_REGION")
@@ -182,14 +234,21 @@ def get_logs(
                 ordered_parts = []
                 if "@timestamp" in log_fields:
                     ordered_parts.append(log_fields["@timestamp"])
+                log_group_name = None
                 if "@log" in log_fields:
                     # @log format: "accountId:logGroupName" — extract just the log group
                     log_group_name = log_fields["@log"].split(":", 1)[-1] if ":" in log_fields["@log"] else log_fields["@log"]
                     ordered_parts.append(f"[{log_group_name}]")
                 elif "@logGroup" in log_fields:
-                    ordered_parts.append(f"[{log_fields['@logGroup']}]")
-                if "@logStream" in log_fields:
-                    ordered_parts.append(f"[{log_fields['@logStream']}]")
+                    log_group_name = log_fields["@logGroup"]
+                    ordered_parts.append(f"[{log_group_name}]")
+                log_stream_name = log_fields.get("@logStream")
+                if log_stream_name:
+                    ordered_parts.append(f"[{log_stream_name}]")
+                if show_resource and log_group_name:
+                    resource = extract_resource_name(log_group_name, log_stream_name)
+                    if resource:
+                        ordered_parts.append(f"({resource})")
                 if "@message" in log_fields:
                     ordered_parts.append(log_fields["@message"])
                 # Append any remaining fields (excluding known ones and @ptr)
