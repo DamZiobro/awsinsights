@@ -182,9 +182,16 @@ Glob patterns (`*`, `?`) are resolved at runtime against actual CloudWatch log g
 Output file
 -----------
 
-Logs will be written to output file. Output file will be:
-* `/tmp/{appname}.log` **if app name is defined** using `--appname` option OR
-* `/tmp/awsinsights.log` **if app name is NOT defined**
+Logs are always written to an output file in addition to stdout:
+
+* `--output /path/to/file.log` — **save to a custom file path**
+* `/tmp/{appname}.log` — default when `--appname` is used (and `--output` is not set)
+* `/tmp/awsinsights.log` — default when `--log_groups` is used directly
+
+Example — save pipeline errors to a specific file:
+```
+awsinsights --appname myapp --timedelta 6h --filter "ERROR" --output ~/logs/errors.log
+```
 
 Help
 -----------
@@ -195,6 +202,7 @@ awsinsights [-h] [--timedelta TIMEDELTA] [--start START] [--end END]
                    (--appname APPNAME | --log_groups LOG_GROUPS [LOG_GROUPS ...])
                    [--env ENV] [--query QUERY] [--wait WAIT] [--tail]
                    [--show_log_group] [--show_log_stream] [--show_resource]
+                   [--output OUTPUT]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -225,4 +233,6 @@ optional arguments:
                         message
   --show_resource       Include AWS resource name (Lambda function, Glue job,
                         etc.) extracted from log group/stream in output
+  --output OUTPUT       Save logs to specified file path instead of default
+                        /tmp/{appname}.log
 ```

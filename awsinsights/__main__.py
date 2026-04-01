@@ -158,6 +158,11 @@ def main():
         dest="show_resource",
         action="store_true",
     )
+    parser.add_argument(
+        "--output",
+        help="Save logs to specified file path instead of default /tmp/{appname}.log",
+        default=None,
+    )
     args = parser.parse_args()
 
     if args.query == insights_query:
@@ -224,6 +229,7 @@ def main():
         wait_sec=int(args.wait),
         is_tail=args.tail,
         show_resource=args.show_resource,
+        output_file_path=args.output,
     )
 
 

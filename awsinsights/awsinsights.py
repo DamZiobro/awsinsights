@@ -156,6 +156,7 @@ def get_logs(
     wait_sec=10,
     is_tail=False,
     show_resource=False,
+    output_file_path=None,
 ):
     region = (
         os.environ.get("AWS_REGION")
@@ -188,13 +189,21 @@ def get_logs(
     )
 
     log_limit = 10000
-    results = {"results": []}
+    result_count = 0
     recent_timestamp = None
-    recent_log_event = None
+    last_seen_ptr = None
 
-    with open(filename, "w+") as output_file:
-        while len(results["results"]) in (0, log_limit) or is_tail:
-            if recent_timestamp:
+    # Determine output file path
+    if output_file_path:
+        filename = output_file_path
+    elif appname:
+        filename = f"/tmp/{appname}.log"
+
+    with open(filename, "w") as output_file:
+        is_first_chunk = True
+
+        while True:
+            if recent_timestamp and not is_first_chunk:
                 start_time = datetime.datetime.strptime(
                     str(recent_timestamp), "%Y-%m-%d %H:%M:%S.%f"
                 )
@@ -225,9 +234,25 @@ def get_logs(
                 results = insights.get_query_results(queryId=async_resp["queryId"])
                 status = results["status"]
 
-            print_log_event = False
+            if not results["results"]:
+                if not is_tail:
+                    if is_first_chunk:
+                        logging.warning(
+                            bcolors.WARNING + "   => 0 logs found which "
+                            "match defined filter..." + bcolors.ENDC
+                        )
+                    break
+                else:
+                    time.sleep(wait_sec)
+                    continue
+
             for log_event in results["results"]:
                 log_fields = {field["field"]: field["value"] for field in log_event}
+
+                # Skip the last event from previous chunk to avoid duplicates
+                current_ptr = log_fields.get("@ptr")
+                if current_ptr and current_ptr == last_seen_ptr:
+                    continue
 
                 # Build log line with explicit field ordering:
                 # @timestamp first, then @logGroup/@logStream if present, then @message
@@ -258,23 +283,18 @@ def get_logs(
                         ordered_parts.append(field_entry["value"])
 
                 log_line = " ".join(ordered_parts)
-
-                if not print_log_event:
-                    print_log_event = _is_recent_event_reached(
-                        recent_log_event, log_event
-                    )
-                else:
-                    print(log_line)
-                    output_file.write(log_line)
+                print(log_line)
+                output_file.write(log_line + "\n")
 
                 recent_timestamp = log_fields.get("@timestamp")
 
-            if len(results["results"]) > 0:
-                recent_log_event = results["results"][-1]
-            else:
-                if not is_tail:
-                    logging.warn(
-                        bcolors.WARNING + "   => 0 logs found which "
-                        "match defined filter..." + bcolors.ENDC
-                    )
-                    break
+            # Track last event's @ptr for dedup across chunks
+            last_event = results["results"][-1]
+            last_seen_ptr = {f["field"]: f["value"] for f in last_event}.get("@ptr")
+
+            result_count = len(results["results"])
+            is_first_chunk = False
+
+            # If fewer results than limit, we've got all logs
+            if result_count < log_limit and not is_tail:
+                break
