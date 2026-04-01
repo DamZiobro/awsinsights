@@ -177,11 +177,28 @@ def get_logs(
             for log_event in results["results"]:
                 log_fields = {field["field"]: field["value"] for field in log_event}
 
-                log_line = ""
-                for field in log_fields.keys():
-                    if field != "@ptr":
-                        log_line += f"{log_fields[field]} "
-                log_line = log_line.rstrip()
+                # Build log line with explicit field ordering:
+                # @timestamp first, then @logGroup/@logStream if present, then @message
+                ordered_parts = []
+                if "@timestamp" in log_fields:
+                    ordered_parts.append(log_fields["@timestamp"])
+                if "@log" in log_fields:
+                    # @log format: "accountId:logGroupName" — extract just the log group
+                    log_group_name = log_fields["@log"].split(":", 1)[-1] if ":" in log_fields["@log"] else log_fields["@log"]
+                    ordered_parts.append(f"[{log_group_name}]")
+                elif "@logGroup" in log_fields:
+                    ordered_parts.append(f"[{log_fields['@logGroup']}]")
+                if "@logStream" in log_fields:
+                    ordered_parts.append(f"[{log_fields['@logStream']}]")
+                if "@message" in log_fields:
+                    ordered_parts.append(log_fields["@message"])
+                # Append any remaining fields (excluding known ones and @ptr)
+                skip_fields = {"@timestamp", "@log", "@logGroup", "@logStream", "@message", "@ptr"}
+                for field_entry in log_event:
+                    if field_entry["field"] not in skip_fields:
+                        ordered_parts.append(field_entry["value"])
+
+                log_line = " ".join(ordered_parts)
 
                 if not print_log_event:
                     print_log_event = _is_recent_event_reached(
