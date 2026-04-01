@@ -7,6 +7,7 @@
 # Distributed under terms of the MIT license.
 
 
+import fnmatch
 import os
 import boto3
 import datetime
@@ -14,6 +15,51 @@ import time
 import logging
 
 logging.basicConfig(level=logging.INFO)
+
+
+def resolve_glob_log_groups(logs_client, log_groups):
+    """Resolve glob patterns (e.g. /aws/lambda/oreo_*) to actual log group names.
+
+    Uses CloudWatch describe_log_groups with the prefix before the first glob
+    character, then filters results using fnmatch for full glob support.
+
+    Log groups without glob characters are passed through unchanged.
+    """
+    resolved = []
+    for group in log_groups:
+        if "*" not in group and "?" not in group:
+            resolved.append(group)
+            continue
+
+        # Extract prefix up to the first glob character for API filtering
+        prefix = group.split("*")[0].split("?")[0]
+
+        logging.info(
+            f"Resolving glob pattern '{group}' "
+            f"(prefix: '{prefix}')..."
+        )
+
+        # Paginate through all matching log groups
+        paginator = logs_client.get_paginator("describe_log_groups")
+        matched = []
+        for page in paginator.paginate(logGroupNamePrefix=prefix):
+            for lg in page.get("logGroups", []):
+                name = lg["logGroupName"]
+                if fnmatch.fnmatch(name, group):
+                    matched.append(name)
+
+        if matched:
+            logging.info(
+                f"  Pattern '{group}' matched {len(matched)} log groups: "
+                f"{matched}"
+            )
+            resolved.extend(matched)
+        else:
+            logging.warning(
+                f"  Pattern '{group}' matched 0 log groups. Skipping."
+            )
+
+    return resolved
 
 
 class bcolors:
@@ -73,6 +119,21 @@ def get_logs(
     if not log_groups:
         logging.error(bcolors.FAIL + "0 log groups configured" + bcolors.ENDC)
         return
+
+    # Resolve glob patterns (e.g. /aws/lambda/oreo_*) to actual log group names
+    log_groups = resolve_glob_log_groups(insights, log_groups)
+
+    if not log_groups:
+        logging.error(
+            bcolors.FAIL + "0 log groups found after resolving glob patterns"
+            + bcolors.ENDC
+        )
+        return
+
+    logging.info(
+        bcolors.OKBLUE + f"Querying {len(log_groups)} log groups: "
+        f"{log_groups}" + bcolors.ENDC
+    )
 
     log_limit = 10000
     results = {"results": []}
