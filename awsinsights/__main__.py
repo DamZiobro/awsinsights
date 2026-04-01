@@ -151,6 +151,13 @@ def main():
         dest="show_log_stream",
         action="store_true",
     )
+    parser.add_argument(
+        "--show_resource",
+        help="Include AWS resource name (Lambda function, Glue job, etc.) "
+        "extracted from log group/stream in output",
+        dest="show_resource",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     if args.query == insights_query:
@@ -162,11 +169,13 @@ def main():
     # Use @log field (account:log-group) which CloudWatch always returns,
     # unlike @logGroup which is silently dropped from results.
     # Also use @logStream which is reliably returned via fields clause.
-    if args.show_log_group or args.show_log_stream:
+    need_log = args.show_log_group or args.show_resource
+    need_stream = args.show_log_stream or args.show_resource
+    if need_log or need_stream:
         extra = ""
-        if args.show_log_group:
+        if need_log:
             extra += ", @log"
-        if args.show_log_stream:
+        if need_stream:
             extra += ", @logStream"
         # Inject after @timestamp in the fields clause
         args.query = args.query.replace(
@@ -214,6 +223,7 @@ def main():
         log_groups=args.log_groups,
         wait_sec=int(args.wait),
         is_tail=args.tail,
+        show_resource=args.show_resource,
     )
 
 
