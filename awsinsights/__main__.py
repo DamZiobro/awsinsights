@@ -139,13 +139,43 @@ def main():
         dest="tail",
         action="store_true",
     )
+    parser.add_argument(
+        "--show_log_group",
+        help="Include log group name in output before each log message",
+        dest="show_log_group",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--show_log_stream",
+        help="Include log stream name in output before each log message",
+        dest="show_log_stream",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     if args.query == insights_query:
         args.query = (
-            "fields @timestamp, @message | filter @message "
+            f"fields @timestamp, @message | filter @message "
             f"like /{args.filter}/ | sort @timestamp"
         )
+
+    # Use @log field (account:log-group) which CloudWatch always returns,
+    # unlike @logGroup which is silently dropped from results.
+    # Also use @logStream which is reliably returned via fields clause.
+    if args.show_log_group or args.show_log_stream:
+        extra = ""
+        if args.show_log_group:
+            extra += ", @log"
+        if args.show_log_stream:
+            extra += ", @logStream"
+        # Inject after @timestamp in the fields clause
+        args.query = args.query.replace(
+            "fields @timestamp,",
+            f"fields @timestamp{extra},",
+            1
+        )
+
+    logging.info(f"Query: {args.query}")
 
     if args.appname:
         app_log_groups = _get_log_groups_of_app(args.appname, args.env)
