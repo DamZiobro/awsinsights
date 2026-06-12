@@ -37,9 +37,12 @@ awsinsights --timedelta 2h --resource my-lambda-function --filter "ERROR"
 awsinsights --timedelta 1d --resource my-glue-job
 ```
    For Glue jobs (which share log groups), logs are narrowed to the job's run IDs
-   within the time window. Combine with `--filter`, `--start`/`--end`, `--tail` as
-   usual. Note: Glue run IDs are resolved once at start, so new runs started during
-   `--tail` are not picked up.
+   within the time window, and only the application output log group
+   (`/aws-glue/jobs/output`) is queried — Spark/server logs (`error`, `logs-v2`,
+   continuous-logging groups) are skipped; use `--log_groups` to query those.
+   Combine with `--filter`, `--start`/`--end`, `--tail` as usual. Note: Glue run
+   IDs are resolved once at start, so new runs started during `--tail` are not
+   picked up.
 
 
 Advanced Usage
@@ -61,6 +64,15 @@ awsinsights --timedelta 2h --log_groups "group-one-dev" "/aws/lambda/group-two-d
 ```
 awsinsights --appname simplebook --timedelta 2h --query "fields @timestamp, @message | filter @message not like /INFO/ | sort @timestamp"
 ```
+
+Colorized Output
+-----------
+
+When printing to a terminal, log lines are colorized automatically: timestamp (cyan),
+log group (blue), log stream (magenta), resource name (green), and the message colored
+by its log level — `ERROR`/`CRITICAL` red, `WARNING` yellow. When output is piped or
+redirected (`| grep`, `> file`) — and in the saved log file — plain raw text is written,
+no ANSI codes. No configuration needed.
 
 Glob Patterns for Log Groups
 -----------

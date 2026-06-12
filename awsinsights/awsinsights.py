@@ -7,8 +7,11 @@
 # Distributed under terms of the MIT license.
 
 
+import difflib
 import fnmatch
 import os
+import re
+import sys
 import boto3
 import datetime
 import time
@@ -87,7 +90,8 @@ def _get_region():
 def _glue_job_run_ids(job_name, start_time, end_time, region):
     """Return run IDs of Glue job `job_name` overlapping the time window.
 
-    Returns [] if no such Glue job exists (or Glue API is unavailable).
+    Returns None if no such Glue job exists (or Glue API is unavailable),
+    [] if the job exists but has no runs in the window.
     Glue writes to shared log groups (/aws-glue/jobs/...) where the log
     stream name is the run ID — the job name appears nowhere, so run IDs
     are the only way to narrow shared groups to one job.
@@ -109,9 +113,10 @@ def _glue_job_run_ids(job_name, start_time, end_time, region):
                 if run_id:
                     run_ids.append(run_id)
     except glue.exceptions.EntityNotFoundException:
-        pass
+        return None
     except Exception:
         logging.debug(f"Glue lookup for '{job_name}' failed; skipping Glue")
+        return None
     return run_ids
 
 
@@ -122,7 +127,9 @@ def resolve_resource_log_groups(resources, start_time, end_time):
       - collects all log groups whose name contains the resource name
         (covers /aws/lambda/{name}, /ecs/{name}, custom groups)
       - if a Glue job with that name has runs in the time window, adds the
-        shared /aws-glue/jobs/* log groups
+        shared /aws-glue/jobs/output log group (application stdout only —
+        Spark/server logs in error, logs-v2 and continuous-logging groups
+        are deliberately skipped; use --log_groups to query those)
 
     Returns (log_groups, stream_filter) where stream_filter is a regex of
     Glue run IDs to apply on @logStream, or None.
@@ -138,15 +145,20 @@ def resolve_resource_log_groups(resources, start_time, end_time):
         log_groups.extend(g for g in matched if g not in log_groups)
 
         run_ids = _glue_job_run_ids(name, start_time, end_time, region)
+        if run_ids == []:
+            logging.warning(
+                bcolors.WARNING + f"Glue job '{name}' exists but has 0 runs "
+                f"in the time window — widen it with --timedelta/--start"
+                + bcolors.ENDC
+            )
         if run_ids:
             logging.info(
                 bcolors.OKGREEN + f"Glue job '{name}': {len(run_ids)} run(s) "
                 f"in time window" + bcolors.ENDC
             )
-            glue_groups = resolve_glob_log_groups(
-                logs_client, ["/aws-glue/jobs/*"]
-            )
-            log_groups.extend(g for g in glue_groups if g not in log_groups)
+            glue_app_group = "/aws-glue/jobs/output"
+            if glue_app_group not in log_groups:
+                log_groups.append(glue_app_group)
             stream_ids.extend(run_ids)
 
     if not log_groups:
@@ -154,9 +166,112 @@ def resolve_resource_log_groups(resources, start_time, end_time):
             bcolors.FAIL + f"No log groups found for resource(s) "
             f"{resources} in region {region}" + bcolors.ENDC
         )
+        for name in resources:
+            suggestions = _suggest_resource_names(name, region)
+            if suggestions:
+                logging.error(
+                    bcolors.WARNING + f"Did you mean: "
+                    f"{', '.join(suggestions)}?" + bcolors.ENDC
+                )
 
     stream_filter = "|".join(stream_ids) if stream_ids else None
     return log_groups, stream_filter
+
+
+def _suggest_resource_names(name, region):
+    """Return up to 3 existing resource names similar to `name`.
+
+    Candidates: Glue job names and resource names derived from log groups.
+    """
+    candidates = set()
+    try:
+        glue = boto3.client("glue", region_name=region)
+        for page in glue.get_paginator("list_jobs").paginate():
+            candidates.update(page.get("JobNames", []))
+    except Exception:
+        pass
+    try:
+        logs_client = boto3.client("logs", region_name=region)
+        for page in logs_client.get_paginator("describe_log_groups").paginate():
+            for lg in page.get("logGroups", []):
+                resource = extract_resource_name(lg["logGroupName"])
+                if resource:
+                    candidates.add(resource)
+    except Exception:
+        pass
+    return difflib.get_close_matches(name, candidates, n=3, cutoff=0.6)
+
+
+LOG_LEVEL_PATTERN = re.compile(r"\b(CRITICAL|FATAL|ERROR|WARNING|WARN|INFO|DEBUG)\b")
+
+# "key": value pairs in JSON-formatted log messages (string/number/bool/null values)
+JSON_PAIR_PATTERN = re.compile(
+    r'"(?P<key>[^"]+)"(?P<sep>\s*:\s*)'
+    r'(?P<val>"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false|null)'
+)
+
+_PART_COLORS = {
+    "timestamp": bcolors.OKCYAN,
+    "log_group": bcolors.OKBLUE,
+    "log_stream": bcolors.HEADER,
+    "resource": bcolors.OKGREEN,
+}
+
+
+def _colorize_json_pair(match):
+    key, sep, val = match.group("key", "sep", "val")
+    key_part = f'{bcolors.OKBLUE}"{key}"{bcolors.ENDC}'
+    if val.startswith('"'):
+        if key == "message":
+            val_part = f"{bcolors.BOLD}{bcolors.WARNING}{val}{bcolors.ENDC}"
+        elif key == "level":
+            val_part = f"{bcolors.OKGREEN}{val}{bcolors.ENDC}"
+        else:
+            val_part = val
+    else:
+        # numbers, true/false, null
+        val_part = f"{bcolors.HEADER}{val}{bcolors.ENDC}"
+    return f"{key_part}{sep}{val_part}"
+
+
+def _colorize_message(text):
+    """Colorize one log message for terminal display.
+
+    ERROR/CRITICAL messages are fully red, WARNING fully yellow (visibility
+    first). Everything else gets field-level highlighting: JSON keys blue,
+    the "message" value bold, the "level" value green, numbers/bools magenta.
+    Plain-text messages just get their level token colored.
+    """
+    match = LOG_LEVEL_PATTERN.search(text)
+    level = match.group(1) if match else ""
+    if level in ("CRITICAL", "FATAL", "ERROR"):
+        return bcolors.FAIL + text + bcolors.ENDC
+    if level in ("WARNING", "WARN"):
+        return bcolors.WARNING + text + bcolors.ENDC
+
+    colored, count = JSON_PAIR_PATTERN.subn(_colorize_json_pair, text)
+    if count:
+        return colored
+    if level:
+        return text.replace(level, bcolors.OKGREEN + level + bcolors.ENDC, 1)
+    return text
+
+
+def colorize_parts(parts):
+    """Render (text, kind) parts as one ANSI-colored line for terminal display.
+
+    Message text is colored via _colorize_message; other kinds get a fixed
+    color per _PART_COLORS.
+    """
+    out = []
+    for text, kind in parts:
+        if kind == "message":
+            out.append(_colorize_message(text))
+        elif kind in _PART_COLORS:
+            out.append(_PART_COLORS[kind] + text + bcolors.ENDC)
+        else:
+            out.append(text)
+    return " ".join(out)
 
 
 def _is_recent_event_reached(recent_log_event, log_event):
@@ -245,6 +360,9 @@ def get_logs(
 ):
     region = _get_region()
     insights = boto3.client("logs", region_name=region)
+
+    # colorize only when printing to a terminal; raw text when piped/redirected
+    use_color = sys.stdout.isatty()
 
     filename = "/tmp/awsinsights.log"
     if appname:
@@ -337,34 +455,36 @@ def get_logs(
 
                 # Build log line with explicit field ordering:
                 # @timestamp first, then @logGroup/@logStream if present, then @message
+                # Parts are (text, kind) tuples so the terminal line can be
+                # colorized while the file/pipe output stays raw.
                 ordered_parts = []
                 if "@timestamp" in log_fields:
-                    ordered_parts.append(log_fields["@timestamp"])
+                    ordered_parts.append((log_fields["@timestamp"], "timestamp"))
                 log_group_name = None
                 if "@log" in log_fields:
                     # @log format: "accountId:logGroupName" — extract just the log group
                     log_group_name = log_fields["@log"].split(":", 1)[-1] if ":" in log_fields["@log"] else log_fields["@log"]
-                    ordered_parts.append(f"[{log_group_name}]")
+                    ordered_parts.append((f"[{log_group_name}]", "log_group"))
                 elif "@logGroup" in log_fields:
                     log_group_name = log_fields["@logGroup"]
-                    ordered_parts.append(f"[{log_group_name}]")
+                    ordered_parts.append((f"[{log_group_name}]", "log_group"))
                 log_stream_name = log_fields.get("@logStream")
                 if log_stream_name:
-                    ordered_parts.append(f"[{log_stream_name}]")
+                    ordered_parts.append((f"[{log_stream_name}]", "log_stream"))
                 if show_resource and log_group_name:
                     resource = extract_resource_name(log_group_name, log_stream_name)
                     if resource:
-                        ordered_parts.append(f"({resource})")
+                        ordered_parts.append((f"({resource})", "resource"))
                 if "@message" in log_fields:
-                    ordered_parts.append(log_fields["@message"])
+                    ordered_parts.append((log_fields["@message"], "message"))
                 # Append any remaining fields (excluding known ones and @ptr)
                 skip_fields = {"@timestamp", "@log", "@logGroup", "@logStream", "@message", "@ptr"}
                 for field_entry in log_event:
                     if field_entry["field"] not in skip_fields:
-                        ordered_parts.append(field_entry["value"])
+                        ordered_parts.append((field_entry["value"], "other"))
 
-                log_line = " ".join(ordered_parts)
-                print(log_line)
+                log_line = " ".join(text for text, _ in ordered_parts)
+                print(colorize_parts(ordered_parts) if use_color else log_line)
                 output_file.write(log_line + "\n")
 
                 recent_timestamp = log_fields.get("@timestamp")

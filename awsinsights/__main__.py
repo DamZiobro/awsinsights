@@ -9,6 +9,7 @@
 import argparse
 import logging
 import os
+import signal
 import sys
 import json
 import traceback
@@ -80,6 +81,10 @@ def _get_log_groups_of_app(appname, env):
 
 
 def main():
+    # exit silently when output is piped to a closed reader (e.g. | head)
+    if hasattr(signal, "SIGPIPE"):
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
     parser = argparse.ArgumentParser(
         prog="awsinsights",
         description=(
@@ -132,7 +137,8 @@ def main():
         "--resource",
         help="name(s) of AWS resources to get logs for, e.g. Lambda function "
         "or Glue job name. Log groups containing the name are discovered "
-        "automatically; for Glue jobs, logs are narrowed to the job's run IDs "
+        "automatically; for Glue jobs, only application output "
+        "(/aws-glue/jobs/output) is queried, narrowed to the job's run IDs "
         "within the time window (resolved once at start — new runs during "
         "--tail are not picked up)",
         nargs="+",
