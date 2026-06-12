@@ -234,20 +234,36 @@ def _colorize_json_pair(match):
     return f"{key_part}{sep}{val_part}"
 
 
+UNBOLD = "\033[22m"  # turn bold off without resetting the active color
+
+
+def _colorize_level_line(text, base_color):
+    """Whole line in base_color; "timestamp" and "message" values bold."""
+
+    def repl(match):
+        key, sep, val = match.group("key", "sep", "val")
+        if key in ("timestamp", "message"):
+            return f'"{key}"{sep}{bcolors.BOLD}{val}{UNBOLD}'
+        return match.group(0)
+
+    return base_color + JSON_PAIR_PATTERN.sub(repl, text) + bcolors.ENDC
+
+
 def _colorize_message(text):
     """Colorize one log message for terminal display.
 
     ERROR/CRITICAL messages are fully red, WARNING fully yellow (visibility
-    first). Everything else gets field-level highlighting: JSON keys blue,
-    the "message" value bold, the "level" value green, numbers/bools magenta.
+    first), with their "timestamp" and "message" values in bold. Everything
+    else gets field-level highlighting: JSON keys blue, the "message" value
+    bold, the "level" value green, numbers/bools magenta.
     Plain-text messages just get their level token colored.
     """
     match = LOG_LEVEL_PATTERN.search(text)
     level = match.group(1) if match else ""
     if level in ("CRITICAL", "FATAL", "ERROR"):
-        return bcolors.FAIL + text + bcolors.ENDC
+        return _colorize_level_line(text, bcolors.FAIL)
     if level in ("WARNING", "WARN"):
-        return bcolors.WARNING + text + bcolors.ENDC
+        return _colorize_level_line(text, bcolors.WARNING)
 
     colored, count = JSON_PAIR_PATTERN.subn(_colorize_json_pair, text)
     if count:
