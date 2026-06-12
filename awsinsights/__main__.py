@@ -97,9 +97,9 @@ def main():
             "  --resource    AWS resource name(s), e.g. Lambda function or Glue job\n"
             "                — log groups are discovered automatically\n"
             "\n"
-            "Defaults: last 60m of logs; region from AWS_REGION/AWS_DEFAULT_REGION\n"
-            "(falls back to us-east-1); logs printed to stdout and saved to\n"
-            "/tmp/{appname}.log (or /tmp/awsinsights.log)."
+            "Defaults: last 60m of logs; region from --region or AWS_REGION/\n"
+            "AWS_DEFAULT_REGION (falls back to us-east-1); logs printed to stdout\n"
+            "and saved to /tmp/{appname}.log (or /tmp/awsinsights.log)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -144,6 +144,12 @@ def main():
         nargs="+",
     )
 
+    parser.add_argument(
+        "--region",
+        help="AWS region to query, ex. eu-west-2. Default: AWS_REGION/"
+        "AWS_DEFAULT_REGION env var, falls back to us-east-1",
+        default=None,
+    )
     parser.add_argument(
         "--env",
         help='env name. It can replace "$ENV" phrase in log groups names. Default: dev',
@@ -196,6 +202,10 @@ def main():
         default=None,
     )
     args = parser.parse_args()
+
+    if args.region:
+        # all boto3 clients resolve the region via AWS_REGION (see _get_region)
+        os.environ["AWS_REGION"] = args.region
 
     if args.query == insights_query:
         args.query = (

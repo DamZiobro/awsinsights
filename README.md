@@ -35,6 +35,7 @@ awsinsights --timedelta 7d --appname simplebook --filter "Monday|Tuesday"
 ```
 awsinsights --timedelta 2h --resource my-lambda-function --filter "ERROR"
 awsinsights --timedelta 1d --resource my-glue-job
+awsinsights --timedelta 2h --resource my-lambda-function --region eu-west-2
 ```
    For Glue jobs (which share log groups), logs are narrowed to the job's run IDs
    within the time window, and only the application output log group
