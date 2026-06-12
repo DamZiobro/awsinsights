@@ -14,6 +14,8 @@ import sys
 import json
 import traceback
 
+from importlib.metadata import version, PackageNotFoundError
+
 from datetime import datetime, timedelta
 
 from awsinsights import awsinsights
@@ -102,6 +104,13 @@ def main():
             "and saved to /tmp/{appname}.log (or /tmp/awsinsights.log)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    try:
+        pkg_version = version("awsinsights")
+    except PackageNotFoundError:
+        pkg_version = "unknown (not installed as a package)"
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {pkg_version}"
     )
     parser.add_argument(
         "--timedelta",
