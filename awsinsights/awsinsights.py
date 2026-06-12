@@ -40,9 +40,11 @@ def resolve_glob_log_groups(logs_client, log_groups):
         )
 
         # Paginate through all matching log groups
+        # (empty prefix happens for patterns like "*name*" — scan all groups)
         paginator = logs_client.get_paginator("describe_log_groups")
         matched = []
-        for page in paginator.paginate(logGroupNamePrefix=prefix):
+        paginate_kwargs = {"logGroupNamePrefix": prefix} if prefix else {}
+        for page in paginator.paginate(**paginate_kwargs):
             for lg in page.get("logGroups", []):
                 name = lg["logGroupName"]
                 if fnmatch.fnmatch(name, group):
@@ -72,6 +74,89 @@ class bcolors:
     ENDC = "\033[0m"
     BOLD = "\033[1m"
     UNDERLINE = "\033[4m"
+
+
+def _get_region():
+    return (
+        os.environ.get("AWS_REGION")
+        or os.environ.get("AWS_DEFAULT_REGION")
+        or "us-east-1"
+    )
+
+
+def _glue_job_run_ids(job_name, start_time, end_time, region):
+    """Return run IDs of Glue job `job_name` overlapping the time window.
+
+    Returns [] if no such Glue job exists (or Glue API is unavailable).
+    Glue writes to shared log groups (/aws-glue/jobs/...) where the log
+    stream name is the run ID — the job name appears nowhere, so run IDs
+    are the only way to narrow shared groups to one job.
+    """
+    glue = boto3.client("glue", region_name=region)
+    run_ids = []
+    try:
+        paginator = glue.get_paginator("get_job_runs")
+        for page in paginator.paginate(JobName=job_name):
+            for run in page["JobRuns"]:
+                started = run.get("StartedOn")
+                completed = run.get("CompletedOn")
+                if started and started.timestamp() > end_time.timestamp():
+                    continue
+                if completed and completed.timestamp() < start_time.timestamp():
+                    # runs are returned newest first — everything below is older
+                    return run_ids
+                run_id = run.get("Id")
+                if run_id:
+                    run_ids.append(run_id)
+    except glue.exceptions.EntityNotFoundException:
+        pass
+    except Exception:
+        logging.debug(f"Glue lookup for '{job_name}' failed; skipping Glue")
+    return run_ids
+
+
+def resolve_resource_log_groups(resources, start_time, end_time):
+    """Map AWS resource names (Lambda function, Glue job, etc.) to log groups.
+
+    For each name:
+      - collects all log groups whose name contains the resource name
+        (covers /aws/lambda/{name}, /ecs/{name}, custom groups)
+      - if a Glue job with that name has runs in the time window, adds the
+        shared /aws-glue/jobs/* log groups
+
+    Returns (log_groups, stream_filter) where stream_filter is a regex of
+    Glue run IDs to apply on @logStream, or None.
+    """
+    region = _get_region()
+    logs_client = boto3.client("logs", region_name=region)
+
+    log_groups = []
+    stream_ids = []
+
+    for name in resources:
+        matched = resolve_glob_log_groups(logs_client, [f"*{name}*"])
+        log_groups.extend(g for g in matched if g not in log_groups)
+
+        run_ids = _glue_job_run_ids(name, start_time, end_time, region)
+        if run_ids:
+            logging.info(
+                bcolors.OKGREEN + f"Glue job '{name}': {len(run_ids)} run(s) "
+                f"in time window" + bcolors.ENDC
+            )
+            glue_groups = resolve_glob_log_groups(
+                logs_client, ["/aws-glue/jobs/*"]
+            )
+            log_groups.extend(g for g in glue_groups if g not in log_groups)
+            stream_ids.extend(run_ids)
+
+    if not log_groups:
+        logging.error(
+            bcolors.FAIL + f"No log groups found for resource(s) "
+            f"{resources} in region {region}" + bcolors.ENDC
+        )
+
+    stream_filter = "|".join(stream_ids) if stream_ids else None
+    return log_groups, stream_filter
 
 
 def _is_recent_event_reached(recent_log_event, log_event):
@@ -158,11 +243,7 @@ def get_logs(
     show_resource=False,
     output_file_path=None,
 ):
-    region = (
-        os.environ.get("AWS_REGION")
-        or os.environ.get("AWS_DEFAULT_REGION")
-        or "us-east-1"
-    )
+    region = _get_region()
     insights = boto3.client("logs", region_name=region)
 
     filename = "/tmp/awsinsights.log"

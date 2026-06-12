@@ -80,7 +80,24 @@ def _get_log_groups_of_app(appname, env):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        prog="awsinsights",
+        description=(
+            "Get, merge and filter AWS CloudWatch logs from multiple log groups\n"
+            "using the CloudWatch Insights API.\n"
+            "\n"
+            "Select log groups in one of three ways:\n"
+            "  --appname     app alias mapped to log groups in ~/.awsinsights.json\n"
+            "  --log_groups  explicit log group names (glob patterns supported)\n"
+            "  --resource    AWS resource name(s), e.g. Lambda function or Glue job\n"
+            "                — log groups are discovered automatically\n"
+            "\n"
+            "Defaults: last 60m of logs; region from AWS_REGION/AWS_DEFAULT_REGION\n"
+            "(falls back to us-east-1); logs printed to stdout and saved to\n"
+            "/tmp/{appname}.log (or /tmp/awsinsights.log)."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "--timedelta",
         help="delta time since now when logs should be filtered "
@@ -109,6 +126,15 @@ def main():
         "--log_groups",
         help='list of the log groups " \
                        "to analyse (up to 20)',
+        nargs="+",
+    )
+    group.add_argument(
+        "--resource",
+        help="name(s) of AWS resources to get logs for, e.g. Lambda function "
+        "or Glue job name. Log groups containing the name are discovered "
+        "automatically; for Glue jobs, logs are narrowed to the job's run IDs "
+        "within the time window (resolved once at start — new runs during "
+        "--tail are not picked up)",
         nargs="+",
     )
 
@@ -213,6 +239,24 @@ def main():
     else:
         logging.error("ERROR => Neither start/end pair nor timedelta is defined")
         parser.print_help()
+
+    if args.resource:
+        args.log_groups, stream_filter = awsinsights.resolve_resource_log_groups(
+            args.resource, start, end
+        )
+        if not args.log_groups:
+            sys.exit(-1)
+        if stream_filter:
+            # Glue jobs share log groups — narrow to this job's run-ID streams
+            if " | sort" in args.query:
+                args.query = args.query.replace(
+                    " | sort",
+                    f" | filter @logStream like /{stream_filter}/ | sort",
+                    1,
+                )
+            else:
+                args.query += f" | filter @logStream like /{stream_filter}/"
+            logging.info(f"Query narrowed to Glue run streams: {args.query}")
 
     if args.tail:
         logging.info(

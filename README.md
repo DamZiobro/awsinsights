@@ -30,6 +30,17 @@ awsinsights --timedelta 30m --appname simplebook
 awsinsights --timedelta 7d --appname simplebook --filter "Monday|Tuesday"
 ```
 
+5. **Get logs by AWS resource name** (no config needed) — Lambda function, Glue job,
+   ECS service, etc. Log groups containing the name are discovered automatically:
+```
+awsinsights --timedelta 2h --resource my-lambda-function --filter "ERROR"
+awsinsights --timedelta 1d --resource my-glue-job
+```
+   For Glue jobs (which share log groups), logs are narrowed to the job's run IDs
+   within the time window. Combine with `--filter`, `--start`/`--end`, `--tail` as
+   usual. Note: Glue run IDs are resolved once at start, so new runs started during
+   `--tail` are not picked up.
+
 
 Advanced Usage
 -----------
